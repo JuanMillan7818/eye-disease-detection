@@ -16,6 +16,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.dataset import create_dataloaders
 from src.explorer import SEED
 from src.model import MODEL_SPECS, create_model, save_checkpoint, set_backbone_trainable
+from src.prepare_data import PROCESSED_DIR
 
 FIGURES_DIR = Path("reports/figures")
 
@@ -34,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None, help="use N images per split (smoke test)")
     parser.add_argument("--output-dir", type=Path, default=Path("models"))
+    parser.add_argument("--image-dir", type=Path, default=PROCESSED_DIR,
+                        help="folder with the preprocessed images")
     return parser.parse_args()
 
 def set_seed(seed: int) -> None:
@@ -116,7 +119,7 @@ def train(args: argparse.Namespace) -> None:
 
     loaders, classes, class_weights = create_dataloaders(
         image_size=image_size, batch_size=args.batch_size,
-        num_workers=args.workers, limit=args.limit,
+        num_workers=args.workers, limit=args.limit, image_dir=args.image_dir,
     )
     print(f"Train: {len(loaders['train'].dataset)} | Val: {len(loaders['val'].dataset)} imágenes")
 
