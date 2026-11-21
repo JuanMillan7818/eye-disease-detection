@@ -15,3 +15,6 @@ models/
 
 # Guia personal de pasos (no subir)
 GUIA_PASOS.md
+
+# Imagenes preprocesadas (se regeneran con src.prepare_data)
+data_processed/

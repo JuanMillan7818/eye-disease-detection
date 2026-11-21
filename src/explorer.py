@@ -10,11 +10,12 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 DATA_DIR = Path("data")
-SALIDA_DIR = Path("reports/figures")
-EXTENSIONES = {".jpg", ".jpeg", ".png"}
-SEMILLA = 42
+OUTPUT_DIR = Path("reports/figures")
+EXTENSIONS = {".jpg", ".jpeg", ".png"}
+SEED = 42
 
-NOMBRES = {
+# Display names shown to end users (Spanish on purpose)
+CLASS_NAMES = {
     "A": "Degeneración macular",
     "C": "Catarata",
     "D": "Retinopatía diabética",
@@ -24,133 +25,120 @@ NOMBRES = {
     "N": "Normal",
 }
 
+def list_images(data_dir: Path) -> dict[str, list[Path]]:
+    """Return {class_label: [image paths]}, reading one folder per class."""
+    classes = {}
+    for folder in sorted(p for p in data_dir.iterdir() if p.is_dir()):
+        images = sorted(f for f in folder.iterdir() if f.suffix.lower() in EXTENSIONS)
+        classes[folder.name] = images
+    return classes
 
-def listar_imagenes(data_dir: Path) -> dict[str, list[Path]]:
-    """Devuelve {clase: [rutas de imágenes]} leyendo una carpeta por clase."""
-    clases = {}
-    for carpeta in sorted(p for p in data_dir.iterdir() if p.is_dir()):
-        imagenes = sorted(f for f in carpeta.iterdir() if f.suffix.lower() in EXTENSIONES)
-        clases[carpeta.name] = imagenes
-    return clases
+def print_class_counts(classes: dict[str, list[Path]]) -> None:
+    """Print images per class and the imbalance ratio."""
+    total = sum(len(imgs) for imgs in classes.values())
+    print(f"{'Clase':<6}{'Nombre':<26}{'Imgs':>7}{'%':>8}")
+    for label, imgs in classes.items():
+        print(f"{label:<6}{CLASS_NAMES.get(label, '?'):<26}{len(imgs):>7}{len(imgs) / total:>8.1%}")
+    print(f"{'':<6}{'TOTAL':<26}{total:>7}")
 
-def resumen_conteo(clases: dict[str, list[Path]]) -> None:
-    """Imprime cuántas imágenes hay por clase y el ratio de desbalance."""
-    total = sum(len(imgs) for imgs in clases.values())
-    print(f"{'Clase':<6}{'Nombre':<26}{'Imgs':>6}{'%':>8}")
-    for clase, imgs in clases.items():
-        print(f"{clase:<6}{NOMBRES.get(clase, '?'):<26}{len(imgs):>6}{len(imgs) / total:>8.1%}")
-    print(f"{'':<6}{'TOTAL':<26}{total:>6}")
+    counts = [len(imgs) for imgs in classes.values()]
+    print(f"Ratio de desbalance (mayor/menor): {max(counts) / min(counts):.1f}x\n")
 
-    conteos = [len(imgs) for imgs in clases.values()]
-    print(f"Ratio de desbalance (mayor/menor): {max(conteos) / min(conteos):.1f}x\n")
-
-def resumen_conteo(clases: dict[str, list[Path]]) -> None:
-    """Imprime cuántas imágenes hay por clase y el ratio de desbalance."""
-    total = sum(len(imgs) for imgs in clases.values())
-    print(f"{'Clase':<6}{'Nombre':<26}{'Imgs':>6}{'%':>8}")
-    for clase, imgs in clases.items():
-        print(f"{clase:<6}{NOMBRES.get(clase, '?'):<26}{len(imgs):>6}{len(imgs) / total:>8.1%}")
-    print(f"{'':<6}{'TOTAL':<26}{total:>6}")
-
-    conteos = [len(imgs) for imgs in clases.values()]
-    print(f"Ratio de desbalance (mayor/menor): {max(conteos) / min(conteos):.1f}x\n")
-
-
-def grafico_barras(clases: dict[str, list[Path]], salida: Path) -> None:
-    """Guarda un gráfico de barras con la distribución de clases."""
-    etiquetas = [f"{c}\n{NOMBRES.get(c, '?')}" for c in clases]
-    conteos = [len(imgs) for imgs in clases.values()]
+def plot_class_distribution(classes: dict[str, list[Path]], output_dir: Path) -> None:
+    """Save a bar chart with the number of images per class."""
+    labels = [f"{c}\n{CLASS_NAMES.get(c, '?')}" for c in classes]
+    counts = [len(imgs) for imgs in classes.values()]
 
     fig, ax = plt.subplots(figsize=(11, 5))
-    barras = ax.bar(etiquetas, conteos, color="#4C72B0")
-    ax.bar_label(barras)
+    bars = ax.bar(labels, counts, color="#4C72B0")
+    ax.bar_label(bars)
     ax.set_title("Imágenes por clase")
     ax.set_ylabel("Cantidad")
     ax.tick_params(axis="x", labelsize=8)
-    fig.savefig(salida / "class_distribution.png", dpi=120, bbox_inches="tight")
+    fig.savefig(output_dir / "class_distribution.png", dpi=120, bbox_inches="tight")
     plt.close(fig)
 
-def grilla_ejemplos(clases: dict[str, list[Path]], salida: Path, n: int = 4) -> None:
-    """Guarda una grilla con n imágenes al azar de cada clase (una fila por clase)."""
-    rng = random.Random(SEMILLA)
-    fig, ejes = plt.subplots(len(clases), n, figsize=(n * 2.5, len(clases) * 2.5))
+def plot_samples(classes: dict[str, list[Path]], output_dir: Path, n: int = 4) -> None:
+    """Save a grid with n random images per class (one row per class)."""
+    rng = random.Random(SEED)
+    fig, axes = plt.subplots(len(classes), n, figsize=(n * 2.5, len(classes) * 2.5))
 
-    for fila, (clase, imgs) in enumerate(clases.items()):
-        for col, ruta in enumerate(rng.sample(imgs, n)):
-            ax = ejes[fila, col]
-            with Image.open(ruta) as img:
+    for row, (label, imgs) in enumerate(classes.items()):
+        for col, path in enumerate(rng.sample(imgs, n)):
+            ax = axes[row, col]
+            with Image.open(path) as img:
                 ax.imshow(img.convert("RGB"))
-            ax.set_title(f"{clase} · {ruta.name}" if col == 0 else ruta.name, fontsize=7)
+            ax.set_title(f"{label} · {path.name}" if col == 0 else path.name, fontsize=7)
             ax.axis("off")
 
     fig.tight_layout()
-    fig.savefig(salida / "samples_per_class.png", dpi=100)
+    fig.savefig(output_dir / "samples_per_class.png", dpi=100)
     plt.close(fig)
 
 
-def analizar_formatos(clases: dict[str, list[Path]], muestra: int = 100) -> None:
-    """Revisa extensión, tamaño y modo de color en una muestra de cada clase."""
-    rng = random.Random(SEMILLA)
-    print("Formatos (muestra de", muestra, "imágenes por clase)")
-    for clase, imgs in clases.items():
-        extensiones = Counter(p.suffix.lower() for p in imgs)
-        tamanos = Counter()
-        modos = Counter()
-        for ruta in rng.sample(imgs, min(muestra, len(imgs))):
-            with Image.open(ruta) as img:  # solo lee la cabecera: rápido
-                tamanos[img.size] += 1
-                modos[img.mode] += 1
-        print(f"  {clase}: ext={dict(extensiones)} modo={dict(modos)} "
-              f"tamaños más comunes={tamanos.most_common(2)}")
+def analyze_formats(classes: dict[str, list[Path]], sample_size: int = 100) -> None:
+    """Check file extension, size and color mode on a sample of each class."""
+    rng = random.Random(SEED)
+    print(f"Formatos (muestra de {sample_size} imágenes por clase)")
+    for label, imgs in classes.items():
+        extensions = Counter(p.suffix.lower() for p in imgs)
+        sizes = Counter()
+        modes = Counter()
+        for path in rng.sample(imgs, min(sample_size, len(imgs))):
+            with Image.open(path) as img:  # lazy: reads only the header, fast
+                sizes[img.size] += 1
+                modes[img.mode] += 1
+        print(f"  {label}: ext={dict(extensions)} modo={dict(modes)} "
+              f"tamaños más comunes={sizes.most_common(2)}")
     print()
-
-def analizar_pacientes(clases: dict[str, list[Path]]) -> None:
-    """Detecta IDs de paciente en nombres tipo ODIR: '1022_left.jpg' -> '1022'."""
-    patron = re.compile(r"^(\d+)_(left|right)$")
-    pacientes_por_clase = {}
+    
+def analyze_patients(classes: dict[str, list[Path]]) -> None:
+    """Find patient IDs in ODIR-style names: '1022_left.jpg' -> '1022'."""
+    pattern = re.compile(r"^(\d+)_(left|right)$")
+    patients_per_class = {}
 
     print("Pacientes (solo archivos con formato ID_left / ID_right)")
-    for clase, imgs in clases.items():
-        ids = [m.group(1) for p in imgs if (m := patron.match(p.stem))]
-        conteo = Counter(ids)
-        ambos_ojos = sum(1 for veces in conteo.values() if veces >= 2)
-        pacientes_por_clase[clase] = set(conteo)
-        print(f"  {clase}: {len(ids)}/{len(imgs)} con ID, {len(conteo)} pacientes, "
-              f"{ambos_ojos} con ambos ojos en la clase")
+    for label, imgs in classes.items():
+        ids = [m.group(1) for p in imgs if (m := pattern.match(p.stem))]
+        counts = Counter(ids)
+        both_eyes = sum(1 for times in counts.values() if times >= 2)
+        patients_per_class[label] = set(counts)
+        print(f"  {label}: {len(ids)}/{len(imgs)} con ID, {len(counts)} pacientes, "
+              f"{both_eyes} con ambos ojos en la clase")
 
-    apariciones = Counter(i for ids in pacientes_por_clase.values() for i in ids)
-    en_varias = sum(1 for veces in apariciones.values() if veces > 1)
-    print(f"  Pacientes que aparecen en más de una clase: {en_varias}\n")
+    occurrences = Counter(pid for ids in patients_per_class.values() for pid in ids)
+    multi_class = sum(1 for times in occurrences.values() if times > 1)
+    print(f"  Pacientes que aparecen en más de una clase: {multi_class}\n")
 
-def analizar_duplicados(clases: dict[str, list[Path]]) -> None:
-    """Busca archivos idénticos byte a byte usando un hash MD5."""
-    por_hash = defaultdict(list)
-    for clase, imgs in clases.items():
-        for ruta in imgs:
-            huella = hashlib.md5(ruta.read_bytes()).hexdigest()
-            por_hash[huella].append(f"{clase}/{ruta.name}")
+def analyze_duplicates(classes: dict[str, list[Path]]) -> None:
+    """Find byte-identical files using an MD5 hash."""
+    by_hash = defaultdict(list)
+    for label, imgs in classes.items():
+        for path in imgs:
+            digest = hashlib.md5(path.read_bytes()).hexdigest()
+            by_hash[digest].append(f"{label}/{path.name}")
 
-    grupos = [rutas for rutas in por_hash.values() if len(rutas) > 1]
-    cruzados = [g for g in grupos if len({r.split("/")[0] for r in g}) > 1]
-    print(f"Grupos de duplicados exactos: {len(grupos)}")
-    print(f"  ...con la MISMA imagen en clases distintas: {len(cruzados)}")
-    for g in cruzados[:5]:
+    groups = [paths for paths in by_hash.values() if len(paths) > 1]
+    cross_class = [g for g in groups if len({p.split("/")[0] for p in g}) > 1]
+    print(f"Grupos de duplicados exactos: {len(groups)}")
+    print(f"  ...con la MISMA imagen en clases distintas: {len(cross_class)}")
+    for g in cross_class[:5]:
         print("   ", g)
     print()
 
-
 def main() -> None:
-    SALIDA_DIR.mkdir(parents=True, exist_ok=True)
-    clases = listar_imagenes(DATA_DIR)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    classes = list_images(DATA_DIR)
 
-    resumen_conteo(clases)
-    analizar_formatos(clases)
-    analizar_pacientes(clases)
-    analizar_duplicados(clases)
-    grafico_barras(clases, SALIDA_DIR)
-    grilla_ejemplos(clases, SALIDA_DIR)
-    print(f"Figuras guardadas en {SALIDA_DIR}/")
+    print_class_counts(classes)
+    analyze_formats(classes)
+    analyze_patients(classes)
+    analyze_duplicates(classes)
+    plot_class_distribution(classes, OUTPUT_DIR)
+    plot_samples(classes, OUTPUT_DIR)
+    print(f"Figuras guardadas en {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":
     main()
+
