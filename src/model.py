@@ -48,13 +48,13 @@ def count_parameters(model: nn.Module) -> tuple[int, int]:
     return total, trainable
 
 def save_checkpoint(model: nn.Module, path: Path, model_name: str, classes: list[str],
-                    metrics: dict | None = None) -> None:
+                    image_size: int | None = None, metrics: dict | None = None) -> None:
     """Save weights plus everything needed to rebuild and use the model later."""
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
         "model_name": model_name,
         "classes": classes,
-        "image_size": MODEL_SPECS[model_name].image_size,
+        "image_size": image_size or MODEL_SPECS[model_name].image_size,
         "metrics": metrics or {},
         "state_dict": model.state_dict(),
     }, path)

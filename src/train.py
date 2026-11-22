@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None, help="use N images per split (smoke test)")
     parser.add_argument("--output-dir", type=Path, default=Path("models"))
+    parser.add_argument("--image-size", type=int, default=None,
+                        help="override the model's default input size (e.g. 448)")
     parser.add_argument("--image-dir", type=Path, default=PROCESSED_DIR,
                         help="folder with the preprocessed images")
     return parser.parse_args()
@@ -114,8 +116,9 @@ def plot_history(history: list[dict], model_name: str, path: Path) -> None:
 def train(args: argparse.Namespace) -> None:
     set_seed(SEED)
     device = get_device()
-    image_size = MODEL_SPECS[args.model].image_size
-    print(f"Dispositivo: {device} | modelo: {args.model} | imagen: {image_size}px")
+    image_size = args.image_size or MODEL_SPECS[args.model].image_size
+    run_name = args.model if args.image_size is None else f"{args.model}_{image_size}"
+    print(f"Dispositivo: {device} | corrida: {run_name} | imagen: {image_size}px")
 
     loaders, classes, class_weights = create_dataloaders(
         image_size=image_size, batch_size=args.batch_size,
@@ -127,7 +130,7 @@ def train(args: argparse.Namespace) -> None:
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device),
                                     label_smoothing=args.label_smoothing)
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
-    checkpoint_path = args.output_dir / f"{args.model}_best.pth"
+    checkpoint_path = args.output_dir / f"{run_name}_best.pth"
 
     stages = [
         ("1-cabeza", args.head_epochs, args.head_lr, False),
@@ -165,7 +168,7 @@ def train(args: argparse.Namespace) -> None:
             if val_m["f1_macro"] > best_f1:
                 best_f1 = val_m["f1_macro"]
                 patience_left = args.patience
-                save_checkpoint(model, checkpoint_path, args.model, classes, metrics={
+                save_checkpoint(model, checkpoint_path, args.model, classes, image_size, metrics={
                     "epoch": epoch, "val_f1_macro": val_m["f1_macro"], "val_acc": val_m["acc"],
                 })
                 print(f"  -> mejor modelo guardado (val F1 {best_f1:.3f})")
@@ -175,8 +178,8 @@ def train(args: argparse.Namespace) -> None:
                     print(f"  -> early stopping: {args.patience} épocas sin mejorar")
                     break
 
-    save_history(history, args.output_dir / f"{args.model}_history.csv")
-    plot_history(history, args.model, FIGURES_DIR / f"{args.model}_training_curves.png")
+    save_history(history, args.output_dir / f"{run_name}_history.csv")
+    plot_history(history, run_name, FIGURES_DIR / f"{run_name}_training_curves.png")
     print(f"\nMejor val F1 macro: {best_f1:.3f} | checkpoint: {checkpoint_path}")
 
 
