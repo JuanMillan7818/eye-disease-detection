@@ -68,24 +68,71 @@ foto → recorte de la retina → filtro de calidad → EfficientNetV2-S → cal
 
 **Datos:** dataset público de Kaggle ("Eye Diseases Classification"), basado en ODIR-5K y otras fuentes. Son 10 449 imágenes en 7 clases, divididas 71/14/14 % (train/val/test) **por paciente** (`StratifiedGroupKFold`), con detección de imágenes casi duplicadas para que no haya fugas entre conjuntos.
 
-## Instalación
+## Probar la app (sin entrenar nada)
 
-Requisitos: Python 3.11+ y [uv](https://docs.astral.sh/uv/).
+Solo hacen falta **el código** y **el archivo del modelo** (`v2s_best.pth`, 82 MB). No se necesitan los datos, ni GPU, ni Colab: el modelo ya viene entrenado y calibrado, y corre en el procesador.
 
-```bash
-git clone https://github.com/JuanMillan7818/eye-disease-detection.git
-cd eye-disease-detection
-uv sync
+**1. Instalar [uv](https://docs.astral.sh/uv/)** (una sola vez). uv instala por su cuenta Python y todas las librerías.
+
+```powershell
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**El modelo entrenado no está en el repositorio** (82 MB). Descarga `v2s_best.pth` desde la sección *Releases* del repositorio y guárdalo en `models/`.
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-Para verificar el archivo (PowerShell):
+Después de instalar uv, **cierra la terminal y abre una nueva**.
+
+**2. Descargar el código**, de una de estas dos formas:
+
+- Con git: `git clone https://github.com/JuanMillan7818/eye-disease-detection.git`
+- Sin git: en GitHub, botón **Code → Download ZIP**, y descomprimir.
+
+**3. Poner el modelo en `models/`.** El modelo **no está en el repositorio** por su tamaño. Descárgalo desde la sección *Releases* o desde la carpeta compartida, y cópialo así:
+
+```
+eye-disease-detection/
+├── api/
+├── models/
+│   └── v2s_best.pth      ← aquí (crear la carpeta models si no existe)
+├── src/
+└── web/
+```
+
+Solo hace falta `v2s_best.pth`. Los demás archivos de la carpeta compartida (`.onnx`, `muestras/`) son opcionales.
+
+**4. Instalar las dependencias y arrancar la app**, desde la carpeta del proyecto:
+
+```bash
+cd eye-disease-detection
+uv sync                          # la primera vez tarda unos minutos (descarga PyTorch)
+uv run uvicorn api.main:app
+```
+
+Cuando aparezca `Uvicorn running on http://127.0.0.1:8000`, abre **<http://127.0.0.1:8000>** en el navegador. Para detener la app: `Ctrl + C`.
+
+**5. Probar:** arrastra una **foto de fondo de ojo** (JPG o PNG) y pulsa **Analizar**. Si no tienes fotos, usa las de la carpeta `muestras/` que viene con el modelo. Una foto común (una persona, un paisaje) se rechaza a propósito, porque la app solo analiza retinas.
+
+**Problemas frecuentes:**
+
+| Mensaje | Solución |
+|---|---|
+| `No se encontró el modelo '...\models\v2s_best.pth'` | El archivo no está en `models/`, o tiene otro nombre. Revisa el paso 3. |
+| `uv: command not found` / `uv no se reconoce` | Cierra y vuelve a abrir la terminal después de instalar uv. |
+| `[WinError 10013]` o `address already in use` | El puerto 8000 está ocupado: `uv run uvicorn api.main:app --port 8001` y abre <http://127.0.0.1:8001>. |
+| La página dice "No se pudo conectar con la API" | La terminal con uvicorn se cerró o se detuvo: vuelve a ejecutar el paso 4. |
+
+**Verificar que el modelo llegó completo** (opcional, PowerShell):
 
 ```powershell
 Get-FileHash models\v2s_best.pth -Algorithm SHA256
 # 192F0D380F6099FE78217B27FE44D3FE7804F79EE0A90508D04D33A3E6C0C088
 ```
+
+Si el hash no coincide, el archivo está incompleto o es otro: descárgalo de nuevo.
 
 ## Uso
 

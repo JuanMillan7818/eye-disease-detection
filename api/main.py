@@ -63,6 +63,10 @@ inference_lock = threading.Lock()  # Grad-CAM keeps activations on the instance:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    checkpoint = MODELS_DIR / f"{MODEL_NAME}_best.pth"
+    if not checkpoint.is_file():  # clear message instead of a long PyTorch traceback
+        raise RuntimeError(f"No se encontró el modelo '{checkpoint.resolve()}'. "
+                           f"Copia {MODEL_NAME}_best.pth a la carpeta models/ (ver README).")
     state["explainer"] = Explainer(MODEL_NAME, MODELS_DIR)  # load once, not per request
     yield
     state.clear()
