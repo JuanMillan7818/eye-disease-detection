@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detección de enfermedades oculares</title>
+  <meta name="description" content="Análisis de fotos de fondo de ojo con inteligencia artificial (proyecto académico).">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%23c2410c'/><circle cx='50' cy='50' r='16' fill='%23fde68a'/></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <h1>Detección de enfermedades oculares</h1>
+      <p class="subtitle">Sube una foto de fondo de ojo (retina) y el modelo indica si ve signos de alguna de estas enfermedades: degeneración macular, catarata, retinopatía diabética, glaucoma, retinopatía hipertensiva o miopía.</p>
+      <p class="status" id="api-status" role="status">Conectando con el modelo…</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <p class="disclaimer">
+      <strong>Proyecto académico.</strong> Este resultado <strong>no es un diagnóstico médico</strong>.
+      Ante cualquier duda, o aunque el resultado sea "Normal", consulta a un oftalmólogo.
+    </p>
+
+    <div class="layout">
+      <section class="card" aria-labelledby="upload-title">
+        <h2 id="upload-title">1. Imagen</h2>
+
+        <label class="dropzone" id="dropzone" for="file-input">
+          <input type="file" id="file-input" accept="image/jpeg,image/png" class="visually-hidden">
+          <span class="dropzone-empty" id="dropzone-empty">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="40" height="40"><path fill="currentColor" d="M19 13v6H5v-6H3v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6zm-8-9.17V16h2V3.83l3.59 3.58L18 6l-6-6-6 6 1.41 1.41z"/></svg>
+            <strong>Arrastra la foto aquí</strong>
+            <span>o haz clic para elegirla · JPG o PNG, máximo 10 MB</span>
+          </span>
+          <img id="preview" alt="Vista previa de la imagen elegida" hidden>
+        </label>
+
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="analyze-btn" disabled>Analizar</button>
+          <button type="button" class="btn btn-secondary" id="reset-btn" hidden>Elegir otra imagen</button>
+        </div>
+        <p class="file-name" id="file-name"></p>
+      </section>
+
+      <section class="card" aria-labelledby="result-title" aria-live="polite">
+        <h2 id="result-title">2. Resultado</h2>
+
+        <p class="placeholder" id="placeholder">El resultado aparecerá aquí después de analizar una imagen.</p>
+
+        <div class="loading" id="loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          Analizando la imagen…
+        </div>
+
+        <div class="error-box" id="error-box" hidden>
+          <strong id="error-title"></strong>
+          <ul id="error-list"></ul>
+        </div>
+
+        <div id="result" hidden>
+          <div class="verdict" id="verdict">
+            <span class="light" aria-hidden="true"></span>
+            <div>
+              <p class="verdict-level" id="verdict-level"></p>
+              <p class="verdict-name" id="verdict-name"></p>
+              <p class="verdict-advice" id="verdict-advice"></p>
+            </div>
+            <p class="verdict-confidence" id="verdict-confidence"></p>
+          </div>
+
+          <ul class="warnings" id="warnings"></ul>
+
+          <h3>Probabilidad de cada clase</h3>
+          <ul class="bars" id="bars"></ul>
+
+          <h3>¿Dónde miró el modelo?</h3>
+          <div class="figures">
+            <figure>
+              <img id="original-img" alt="Imagen original subida">
+              <figcaption>Tu imagen</figcaption>
+            </figure>
+            <figure id="heatmap-figure">
+              <img id="heatmap-img" alt="Mapa de calor Grad-CAM sobre la retina">
+              <figcaption>Mapa de calor (Grad-CAM)</figcaption>
+            </figure>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span>poca atención</span><span class="legend-bar"></span><span>mucha atención</span>
+          </div>
+          <p class="hint">Las zonas rojas son las que más influyeron en la respuesta. Ayudan a revisar si el modelo se fijó en una parte razonable de la retina.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p id="model-info">Modelo: —</p>
+      <p>Proyecto final · Inteligencia Artificial · INTEP</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

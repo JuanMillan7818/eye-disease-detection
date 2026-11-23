@@ -98,21 +98,26 @@ class Explainer:
 
     def explain(self, image_path: Path) -> dict:
         with Image.open(image_path) as img:
-            clean = preprocess_fundus(img)
+            return self.explain_image(preprocess_fundus(img))
+
+    def explain_image(self, clean: Image.Image) -> dict:
+        """Explain an image already passed through preprocess_fundus (used by the API)."""
         seen = clean.resize((self.image_size, self.image_size))  # what the model actually sees
         tensor = self.transform(clean).unsqueeze(0).to(self.device)
         cam, probs = self.gradcam(tensor)
 
         if self.calibration is None:
             confidence, pred = probs.max(dim=1)
+            distribution = probs
             level = confidence_level(float(confidence), self.classes[int(pred)] == NORMAL_CLASS)
         else:
-            pred, confidence, levels, _ = decide(probs, self.calibration, self.classes)
+            pred, confidence, levels, distribution = decide(probs, self.calibration, self.classes)
             level = levels[0]
             if int(pred) != int(probs.argmax()):  # the policy changed the answer: explain THAT class
                 cam, _ = self.gradcam(tensor, int(pred))
         return {"image": seen, "cam": cam, "pred": self.classes[int(pred)],
-                "confidence": float(confidence), "level": level}
+                "confidence": float(confidence), "level": level,
+                "distribution": dict(zip(self.classes, distribution[0].tolist()))}
 
 
 def title_for(result: dict, record: dict | None) -> str:
