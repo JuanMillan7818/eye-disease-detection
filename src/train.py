@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from sklearn.metrics import f1_score
 from torch import nn
+from torch.nn import functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from src.dataset import create_dataloaders
@@ -39,7 +40,31 @@ def parse_args() -> argparse.Namespace:
                         help="override the model's default input size (e.g. 448)")
     parser.add_argument("--image-dir", type=Path, default=PROCESSED_DIR,
                         help="folder with the preprocessed images")
+    parser.add_argument("--loss", choices=["torch", "weighted-smooth"], default="torch",
+                        help="'weighted-smooth' fixes the class-weight bias of torch's label smoothing")
+    parser.add_argument("--tag", default=None, help="suffix for the run name (e.g. ws -> v2s_ws)")
     return parser.parse_args()
+
+
+class WeightedSmoothCE(nn.Module):
+    """Label smoothing whose weight depends only on the image's real class.
+
+    torch's CrossEntropyLoss(weight, label_smoothing) also weights the smoothed part by each
+    TARGET class, which caps the confidence of frequent classes (D and N at ~72 %).
+    """
+
+    def __init__(self, class_weights: torch.Tensor, smoothing: float):
+        super().__init__()
+        self.register_buffer("class_weights", class_weights)
+        self.smoothing = smoothing
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        log_probs = F.log_softmax(logits.float(), dim=1)
+        ce = -log_probs.gather(1, labels[:, None]).squeeze(1)  # loss for the real class
+        uniform = -log_probs.mean(dim=1)                       # loss for "a bit of every class"
+        weights = self.class_weights[labels]
+        loss = (1 - self.smoothing) * ce + self.smoothing * uniform
+        return (weights * loss).sum() / weights.sum()
 
 def set_seed(seed: int) -> None:
     """Make runs repeatable (same initial head, same shuffling)."""
@@ -118,7 +143,9 @@ def train(args: argparse.Namespace) -> None:
     device = get_device()
     image_size = args.image_size or MODEL_SPECS[args.model].image_size
     run_name = args.model if args.image_size is None else f"{args.model}_{image_size}"
-    print(f"Dispositivo: {device} | corrida: {run_name} | imagen: {image_size}px")
+    if args.tag:
+        run_name = f"{run_name}_{args.tag}"
+    print(f"Dispositivo: {device} | corrida: {run_name} | imagen: {image_size}px | pérdida: {args.loss}")
 
     loaders, classes, class_weights = create_dataloaders(
         image_size=image_size, batch_size=args.batch_size,
@@ -127,8 +154,11 @@ def train(args: argparse.Namespace) -> None:
     print(f"Train: {len(loaders['train'].dataset)} | Val: {len(loaders['val'].dataset)} imágenes")
 
     model = create_model(args.model, num_classes=len(classes)).to(device)
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device),
-                                    label_smoothing=args.label_smoothing)
+    if args.loss == "weighted-smooth":
+        criterion = WeightedSmoothCE(class_weights, args.label_smoothing).to(device)
+    else:
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(device),
+                                        label_smoothing=args.label_smoothing)
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     checkpoint_path = args.output_dir / f"{run_name}_best.pth"
 
@@ -170,7 +200,7 @@ def train(args: argparse.Namespace) -> None:
                 patience_left = args.patience
                 save_checkpoint(model, checkpoint_path, args.model, classes, image_size, metrics={
                     "epoch": epoch, "val_f1_macro": val_m["f1_macro"], "val_acc": val_m["acc"],
-                })
+                }, loss=args.loss)
                 print(f"  -> mejor modelo guardado (val F1 {best_f1:.3f})")
             else:
                 patience_left -= 1

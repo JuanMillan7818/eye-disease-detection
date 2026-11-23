@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 
-from src.calibrate import LEVEL_LABELS, calibrated_confidence, confidence_level
+from src.calibrate import LEVEL_LABELS, NORMAL_CLASS, confidence_level, decide
 from src.dataset import build_transforms, read_splits
 from src.explorer import CLASS_NAMES, DATA_DIR
 from src.model import load_checkpoint
@@ -57,9 +57,10 @@ def main() -> None:
         if calibration is None:
             confidence, pred = probs.max(dim=1)
             distribution = probs
+            level = confidence_level(float(confidence), classes[int(pred)] == NORMAL_CLASS)
         else:
-            pred, confidence, distribution = calibrated_confidence(
-                probs, torch.tensor(calibration["class_weights"]), calibration["temperature"])
+            pred, confidence, levels, distribution = decide(probs, calibration, classes)
+            level = levels[0]
         best, confidence, distribution = int(pred), float(confidence), distribution[0]
         record = find_split(image_path, splits)
 
@@ -73,7 +74,7 @@ def main() -> None:
             if record["split"] == "train":
                 print("  ⚠ El modelo ya vio esta imagen al entrenar: no sirve para medirlo")
         print(f"  Predicción: {classes[best]} {CLASS_NAMES[classes[best]]} ({confidence:.1%})")
-        print(f"  Confianza: {LEVEL_LABELS[confidence_level(confidence)]}")
+        print(f"  Confianza: {LEVEL_LABELS[level]}")
         for i in distribution.argsort(descending=True).tolist():
             bar = "█" * round(distribution[i].item() * 30)
             print(f"    {classes[i]} {CLASS_NAMES[classes[i]]:<27}{distribution[i]:>7.1%} {bar}")

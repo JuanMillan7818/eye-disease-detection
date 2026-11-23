@@ -18,3 +18,9 @@ GUIA_PASOS.md
 
 # Imagenes preprocesadas (se regeneran con src.prepare_data)
 data_processed/
+
+# Grad-CAM: keep only report figures, ignore ad-hoc tests
+reports/figures/gradcam/*
+!reports/figures/gradcam/*_grid_*.png
+!reports/figures/gradcam/*_errors_*.png
+!reports/figures/gradcam/*_mean_maps.png

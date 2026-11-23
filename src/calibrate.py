@@ -1,4 +1,4 @@
-"""Phase 5: confidence calibration — undo the class-weight bias and fit a temperature on val."""
+"""Phase 5: confidence calibration and screening decision policy (traffic light)."""
 
 import argparse
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from sklearn.metrics import f1_score
 
 from src.dataset import create_dataloaders
 from src.evaluate import FIGURES_DIR, predict
@@ -13,12 +14,15 @@ from src.model import load_checkpoint
 from src.prepare_data import PROCESSED_DIR
 from src.train import get_device
 
-HIGH_CONFIDENCE = 0.90
-LOW_CONFIDENCE = 0.50
+HIGH_CONFIDENCE = 0.88  # green: chosen on val (green hits >= 97 %)
+LOW_CONFIDENCE = 0.80   # red below this: chosen on val (hits ~50 %)
+NORMAL_FACTOR = 0.25    # demand 4x more evidence before saying "Normal" (fewer missed patients)
+NORMAL_CLASS = "N"
 LEVEL_LABELS = {
     "high": "🟢 alta",
     "medium": "🟡 media — confirmar con un especialista",
-    "low": "🔴 baja — resultado incierto",
+    "normal": "🟡 sin signos claros de enfermedad — control anual con oftalmólogo",
+    "low": "🔴 baja — resultado incierto, consultar a un especialista",
 }
 
 
@@ -29,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-dir", type=Path, default=PROCESSED_DIR)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=0)
+    parser.add_argument("--normal-factor", type=float, default=NORMAL_FACTOR)
     return parser.parse_args()
 
 
@@ -42,6 +47,30 @@ def calibrated_confidence(probs: torch.Tensor, class_weights: torch.Tensor,
     corrected = ((probs.clamp_min(1e-12) / class_weights).log() / temperature).softmax(dim=1)
     confidence = corrected.gather(1, preds[:, None]).squeeze(1)
     return preds, confidence, corrected
+
+
+def confidence_level(confidence: float, is_normal: bool = False) -> str:
+    """Traffic light. A 'Normal' answer is never green: missing a disease is the costly error."""
+    if confidence < LOW_CONFIDENCE:
+        return "low"
+    if is_normal:
+        return "normal"
+    return "high" if confidence >= HIGH_CONFIDENCE else "medium"
+
+
+def decide(probs: torch.Tensor, calibration: dict,
+           classes: list[str]) -> tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor]:
+    """Screening policy: (decision, calibrated confidence, traffic-light level, calibrated distribution)."""
+    normal = classes.index(NORMAL_CLASS)
+    scaled = probs.clone()
+    scaled[:, normal] *= calibration.get("normal_factor", NORMAL_FACTOR)
+    preds = scaled.argmax(dim=1)  # the factor only moves the decision...
+
+    _, _, distribution = calibrated_confidence(  # ...the shown % comes from the real probabilities
+        probs, torch.tensor(calibration["class_weights"]), calibration["temperature"])
+    confidence = distribution.gather(1, preds[:, None]).squeeze(1)
+    levels = [confidence_level(float(c), int(p) == normal) for c, p in zip(confidence, preds)]
+    return preds, confidence, levels, distribution
 
 
 def correctness_nll(confidence: torch.Tensor, correct: torch.Tensor) -> float:
@@ -71,14 +100,6 @@ def expected_calibration_error(confidence: np.ndarray, correct: np.ndarray, n_bi
     return error
 
 
-def confidence_level(confidence: float) -> str:
-    if confidence >= HIGH_CONFIDENCE:
-        return "high"
-    if confidence >= LOW_CONFIDENCE:
-        return "medium"
-    return "low"
-
-
 def plot_reliability(curves: dict[str, tuple[np.ndarray, np.ndarray]], title: str, path: Path,
                      n_bins: int = 10) -> None:
     """Reliability diagram: a perfectly calibrated model lies on the diagonal."""
@@ -99,19 +120,26 @@ def plot_reliability(curves: dict[str, tuple[np.ndarray, np.ndarray]], title: st
     plt.close(fig)
 
 
-def print_traffic_light(labels: torch.Tensor, preds: torch.Tensor, confidence: torch.Tensor,
-                        classes: list[str]) -> None:
+def print_policy_report(labels: np.ndarray, preds: np.ndarray, levels: list[str], classes: list[str]) -> None:
+    """Screening view: missed patients, false alarms and how reliable each colour is."""
+    normal = classes.index(NORMAL_CLASS)
     correct = preds == labels
-    levels = np.array([confidence_level(float(c)) for c in confidence])
+    sick = labels != normal
+    levels = np.array(levels)
+    print(f"\nF1 macro {f1_score(labels, preds, average='macro'):.3f} | aciertos {correct.mean():.1%}")
+    print(f"Sensibilidad (enfermos detectados): {(preds[sick] != normal).mean():.1%} | "
+          f"especificidad (sanos = Normal): {(preds[~sick] == normal).mean():.1%}")
+    print(f"Enfermos que se escapan (dicen Normal): {(sick & (preds == normal)).sum()} | "
+          f"sanos con falsa alarma: {(~sick & (preds != normal)).sum()}")
     print(f"\n{'nivel':<8}{'% imágenes':>11}{'aciertos':>10}")
     for level in LEVEL_LABELS:
-        mask = torch.from_numpy(levels == level)
+        mask = levels == level
         if mask.any():
-            print(f"{level:<8}{mask.float().mean():>11.0%}{correct[mask].float().mean():>10.1%}")
-    print("\nConfianza alta por clase predicha (cuántas / aciertos):")
+            print(f"{level:<8}{mask.mean():>11.0%}{correct[mask].mean():>10.1%}")
+    print("\nVerde por clase predicha (cuántas / aciertos):")
     for i, c in enumerate(classes):
-        mask = torch.from_numpy(levels == "high") & (preds == i)
-        hits = f"{correct[mask].float().mean():.0%}" if mask.any() else "-"
+        mask = (levels == "high") & (preds == i)
+        hits = f"{correct[mask].mean():.0%}" if mask.any() else "-"
         print(f"  {c}: {int(mask.sum())}/{int((preds == i).sum())} ({hits})")
 
 
@@ -124,6 +152,9 @@ def main() -> None:
         image_size=checkpoint["image_size"], batch_size=args.batch_size,
         num_workers=args.workers, image_dir=args.image_dir,
     )
+    if checkpoint.get("loss", "torch") != "torch":
+        class_weights = torch.ones_like(class_weights)  # the fixed loss leaves no class-weight bias to undo
+
     print(f"Calibrando {args.model} con val ({len(loaders['val'].dataset)} imágenes)...")
     labels, probs, _ = predict(model, loaders["val"], device)
     labels, probs = torch.from_numpy(labels), torch.from_numpy(probs)
@@ -138,18 +169,24 @@ def main() -> None:
     print(f"Confianza media: {raw_conf.mean():.1%} -> {confidence.mean():.1%}")
     print(f"ECE: {expected_calibration_error(raw_conf.numpy(), correct):.3f} -> "
           f"{expected_calibration_error(confidence.numpy(), correct):.3f}")
-    print_traffic_light(labels, preds, confidence, checkpoint["classes"])
+
+    calibration = {
+        "temperature": temperature,
+        "class_weights": class_weights.tolist(),
+        "normal_factor": args.normal_factor,
+        "fitted_on": "val",
+    }
+    final_preds, _, levels, _ = decide(probs, calibration, checkpoint["classes"])
+    print(f"\nPolítica de tamizaje (factor Normal {args.normal_factor}, "
+          f"verde >= {HIGH_CONFIDENCE:.0%}, rojo < {LOW_CONFIDENCE:.0%}):")
+    print_policy_report(labels.numpy(), final_preds.numpy(), levels, checkpoint["classes"])
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     plot_reliability({"sin calibrar": (raw_conf.numpy(), correct),
                       "calibrado": (confidence.numpy(), correct)},
                      f"Calibración — {args.model} (val)", FIGURES_DIR / f"{args.model}_calibration.png")
 
-    checkpoint["calibration"] = {
-        "temperature": temperature,
-        "class_weights": class_weights.tolist(),
-        "fitted_on": "val",
-    }
+    checkpoint["calibration"] = calibration
     torch.save(checkpoint, path)
     print(f"\nCalibración guardada en {path}")
 
