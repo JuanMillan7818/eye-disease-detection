@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from src.dataset import create_dataloaders
 from src.explorer import CLASS_NAMES
 from src.model import load_checkpoint
-from src.prepare_data import PROCESSED_DIR
+from src.prepare_data import PROCESSED_DIR, SPLITS_FILE
 from src.train import get_device
 
 REPORTS_DIR = Path("reports")
@@ -29,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-dir", type=Path, default=PROCESSED_DIR)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=0)
+    parser.add_argument("--splits", type=Path, default=SPLITS_FILE,
+                        help="division to evaluate on; use the SAME one for every compared model")
     return parser.parse_args()
 
 @torch.no_grad()
@@ -108,12 +110,36 @@ def plot_top_errors(records: list[dict], labels: np.ndarray, probs: np.ndarray, 
     fig.savefig(path, dpi=100)
     plt.close(fig)
 
+def split_suffix(splits_file: Path) -> str:
+    """Reports of other divisions get a suffix, so they never overwrite the original ones."""
+    return "" if splits_file == SPLITS_FILE else f"_{splits_file.stem}"
+
+
+def origin_rows(name: str, records: list[dict], labels: np.ndarray, preds: np.ndarray,
+                classes: list[str]) -> list[dict]:
+    """If the division mixes datasets, print and return the metrics of each origin separately."""
+    origins = sorted({r.get("origin", "original") for r in records})
+    if len(origins) < 2:
+        return []
+    rows = []
+    for origin in origins:
+        mask = np.array([r.get("origin", "original") == origin for r in records])
+        present = sorted(set(labels[mask]))  # an origin may lack some classes (external: only C D G N)
+        f1 = f1_score(labels[mask], preds[mask], labels=present, average="macro")
+        recalls = ", ".join(f"{classes[c]} {np.mean(preds[mask][labels[mask] == c] == c):.0%}" for c in present)
+        print(f"  origen {origin:<9} n={mask.sum():<5} acc {np.mean(preds[mask] == labels[mask]):.3f} "
+              f"| F1 macro {f1:.3f} | recall: {recalls}")
+        rows.append({"modelo": name, "variante": f"origen {origin}",
+                     "acc": float(np.mean(preds[mask] == labels[mask])), "f1_macro": f1})
+    return rows
+
+
 def evaluate_model(name: str, args: argparse.Namespace, device: torch.device) -> list[dict]:
     model, checkpoint = load_checkpoint(args.models_dir / f"{name}_best.pth", device)
     classes = checkpoint["classes"]
     loaders, data_classes, _ = create_dataloaders(
         image_size=checkpoint["image_size"], batch_size=args.batch_size,
-        num_workers=args.workers, image_dir=args.image_dir,
+        num_workers=args.workers, image_dir=args.image_dir, splits_file=args.splits,
     )
     assert data_classes == classes, f"Class order mismatch: {data_classes} vs {classes}"
     loader = loaders[args.split]
@@ -128,7 +154,7 @@ def evaluate_model(name: str, args: argparse.Namespace, device: torch.device) ->
     names = [f"{c} {CLASS_NAMES.get(c, c)}" for c in classes]
     print(classification_report(labels, preds, target_names=names, digits=3))
 
-    tag = f"{name}_{args.split}"
+    tag = f"{name}_{args.split}" + split_suffix(args.splits)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     save_predictions(records, labels, probs, classes, REPORTS_DIR / f"{tag}_predictions.csv")
     plot_confusion_matrix(labels, preds, classes, f"Matriz de confusión — {name} ({args.split})",
@@ -137,7 +163,8 @@ def evaluate_model(name: str, args: argparse.Namespace, device: torch.device) ->
                     f"Errores más confiados — {name} ({args.split})", FIGURES_DIR / f"{tag}_errors.png")
 
     per_class_f1 = f1_score(labels, preds, average=None)
-    return [
+    by_origin = origin_rows(name, records, labels, preds, classes)
+    return by_origin + [
         {"modelo": name, "variante": "sin TTA", **summarize(labels, probs),
          **{f"f1_{c}": f for c, f in zip(classes, per_class_f1)}},
         {"modelo": name, "variante": "con TTA", **summarize(labels, probs_tta)},
@@ -151,13 +178,13 @@ def main() -> None:
     for name in args.models:
         rows.extend(evaluate_model(name, args, device))
 
-    print(f"\nComparación en {args.split}:")
-    print(f"{'modelo':<7}{'variante':<10}{'acc':>8}{'F1 macro':>10}")
+    print(f"\nComparación en {args.split} ({args.splits.as_posix()}):")
+    print(f"{'modelo':<9}{'variante':<18}{'acc':>8}{'F1 macro':>10}")
     for row in rows:
-        print(f"{row['modelo']:<7}{row['variante']:<10}{row['acc']:>8.3f}{row['f1_macro']:>10.3f}")
+        print(f"{row['modelo']:<9}{row['variante']:<18}{row['acc']:>8.3f}{row['f1_macro']:>10.3f}")
 
     fieldnames = list(dict.fromkeys(key for row in rows for key in row))
-    with open(REPORTS_DIR / f"{args.split}_comparison.csv", "w", newline="", encoding="utf-8") as f:
+    with open(REPORTS_DIR / f"{args.split}{split_suffix(args.splits)}_comparison.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)

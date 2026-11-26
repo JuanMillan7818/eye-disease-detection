@@ -49,7 +49,7 @@ def count_parameters(model: nn.Module) -> tuple[int, int]:
 
 def save_checkpoint(model: nn.Module, path: Path, model_name: str, classes: list[str],
                     image_size: int | None = None, metrics: dict | None = None,
-                    loss: str = "torch") -> None:
+                    loss: str = "torch", splits: str | None = None) -> None:
     """Save weights plus everything needed to rebuild and use the model later."""
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
@@ -57,6 +57,7 @@ def save_checkpoint(model: nn.Module, path: Path, model_name: str, classes: list
         "classes": classes,
         "image_size": image_size or MODEL_SPECS[model_name].image_size,
         "loss": loss,  # calibration needs to know if the class-weight bias exists
+        "splits": splits or "splits/splits.csv",  # which train/val/test division it learned from
         "metrics": metrics or {},
         "state_dict": model.state_dict(),
     }, path)

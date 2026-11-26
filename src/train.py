@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.dataset import create_dataloaders
 from src.explorer import SEED
 from src.model import MODEL_SPECS, create_model, save_checkpoint, set_backbone_trainable
-from src.prepare_data import PROCESSED_DIR
+from src.prepare_data import PROCESSED_DIR, SPLITS_FILE
 
 FIGURES_DIR = Path("reports/figures")
 
@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loss", choices=["torch", "weighted-smooth"], default="torch",
                         help="'weighted-smooth' fixes the class-weight bias of torch's label smoothing")
     parser.add_argument("--tag", default=None, help="suffix for the run name (e.g. ws -> v2s_ws)")
+    parser.add_argument("--splits", type=Path, default=SPLITS_FILE,
+                        help="train/val/test division (e.g. splits/splits_ext.csv)")
     return parser.parse_args()
 
 
@@ -145,11 +147,13 @@ def train(args: argparse.Namespace) -> None:
     run_name = args.model if args.image_size is None else f"{args.model}_{image_size}"
     if args.tag:
         run_name = f"{run_name}_{args.tag}"
-    print(f"Dispositivo: {device} | corrida: {run_name} | imagen: {image_size}px | pérdida: {args.loss}")
+    print(f"Dispositivo: {device} | corrida: {run_name} | imagen: {image_size}px | pérdida: {args.loss} "
+          f"| división: {args.splits.as_posix()}")
 
     loaders, classes, class_weights = create_dataloaders(
         image_size=image_size, batch_size=args.batch_size,
         num_workers=args.workers, limit=args.limit, image_dir=args.image_dir,
+        splits_file=args.splits,
     )
     print(f"Train: {len(loaders['train'].dataset)} | Val: {len(loaders['val'].dataset)} imágenes")
 
@@ -200,7 +204,7 @@ def train(args: argparse.Namespace) -> None:
                 patience_left = args.patience
                 save_checkpoint(model, checkpoint_path, args.model, classes, image_size, metrics={
                     "epoch": epoch, "val_f1_macro": val_m["f1_macro"], "val_acc": val_m["acc"],
-                }, loss=args.loss)
+                }, loss=args.loss, splits=args.splits.as_posix())
                 print(f"  -> mejor modelo guardado (val F1 {best_f1:.3f})")
             else:
                 patience_left -= 1

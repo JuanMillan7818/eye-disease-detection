@@ -36,6 +36,17 @@ def test_web_page_is_served(client):
     assert client.get("/docs").status_code == 200  # the static mount must not hide the API docs
 
 
+def test_metrics_json_is_consistent(client):
+    metrics = client.get("/metrics.json").json()
+    assert client.get("/metrics.js").status_code == 200
+    matrix = metrics["confusion"]
+    assert len(matrix) == len(metrics["classes"]) == 7
+    assert sum(map(sum, matrix)) == metrics["n_images"]
+    for row, cls in zip(matrix, metrics["classes"]):
+        assert sum(row) == cls["support"]  # each row holds every real image of its class
+    assert 0 < metrics["kpis"]["accuracy"] <= 1
+
+
 def test_health(client):
     body = client.get("/health").json()
     assert body["status"] == "ok"

@@ -42,6 +42,8 @@ Modelo final: **EfficientNetV2-S** (preentrenado en ImageNet, *fine-tuning* comp
 | 🟡 Normal | el modelo no ve enfermedad | **nunca se muestra en verde**: se recomienda control anual |
 | 🔴 Baja | confianza < 80 % | resultado incierto, consultar a un especialista |
 
+En la app, la pestaña **Métricas del modelo** muestra la matriz de confusión y los indicadores, calculados con lo que la app realmente responde (con la política de tamizaje): exactitud 86,7 %, F1 macro 0,882, sensibilidad 89,5 %, especificidad 90,7 %. Se regeneran con `uv run python -m src.model_report --model v2s`.
+
 **Política de tamizaje:** en una prueba de detección temprana, dejar pasar a un enfermo es peor que una falsa alarma. Por eso el modelo exige más evidencia antes de responder "Normal". Así, ningún enfermo del test recibió "Normal" con confianza alta, a cambio de algunas falsas alarmas más.
 
 ### Limitaciones conocidas
@@ -212,7 +214,7 @@ Se prueban la API (predicción, rechazo de imágenes inválidas, límites de tam
 
 ```
 api/main.py            API REST (FastAPI) que además sirve la web
-web/                   frontend: index.html, styles.css, app.js
+web/                   frontend: index.html, styles.css, app.js, metrics.js, metrics.json
 src/
   explorer.py          exploración del dataset
   preprocessing.py     recorte y máscara de la retina
@@ -227,6 +229,8 @@ src/
   quality.py           filtro de calidad de imagen
   source_report.py     aciertos por origen de la imagen
   export_onnx.py       exportación a ONNX
+  model_report.py      KPIs y matriz de confusión para la web (web/metrics.json)
+  prepare_external.py  división con un dataset externo (otras cámaras)
 examples/onnx_predict.py  uso del modelo sin PyTorch
 notebooks/             exploración y entrenamiento en Colab
 reports/               métricas, predicciones y figuras

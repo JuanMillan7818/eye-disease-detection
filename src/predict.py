@@ -47,7 +47,8 @@ def main() -> None:
     model, checkpoint = load_checkpoint(args.models_dir / f"{args.model}_best.pth", device)
     classes, image_size = checkpoint["classes"], checkpoint["image_size"]
     calibration = checkpoint.get("calibration")
-    splits = {r["source"]: r for r in read_splits()}
+    splits_file = Path(checkpoint.get("splits", "splits/splits.csv"))  # the division THIS model learned from
+    splits = {r["source"]: r for r in read_splits(splits_file)}
     print(f"Modelo: {args.model} ({image_size}px) | dispositivo: {device}")
     if calibration is None:
         print(f"⚠ Modelo sin calibrar: ejecuta 'python -m src.calibrate --model {args.model}'")
@@ -66,7 +67,7 @@ def main() -> None:
 
         print(f"\n{image_path}")
         if record is None:
-            print("  Etiqueta real: desconocida (la imagen no está en splits.csv)")
+            print(f"  Etiqueta real: desconocida (la imagen no está en {splits_file.name})")
         else:
             verdict = "✅ acierto" if classes[best] == record["label"] else "❌ error"
             print(f"  Etiqueta real: {record['label']} {CLASS_NAMES[record['label']]} | "

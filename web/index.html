@@ -14,6 +14,10 @@
       <h1>Detección de enfermedades oculares</h1>
       <p class="subtitle">Sube una foto de fondo de ojo (retina) y el modelo indica si ve signos de alguna de estas enfermedades: degeneración macular, catarata, retinopatía diabética, glaucoma, retinopatía hipertensiva o miopía.</p>
       <p class="status" id="api-status" role="status">Conectando con el modelo…</p>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button type="button" role="tab" id="tab-analyze" aria-controls="panel-analyze" aria-selected="true">Analizar imagen</button>
+        <button type="button" role="tab" id="tab-metrics" aria-controls="panel-metrics" aria-selected="false" tabindex="-1">Métricas del modelo</button>
+      </nav>
     </div>
   </header>
 
@@ -23,7 +27,7 @@
       Ante cualquier duda, o aunque el resultado sea "Normal", consulta a un oftalmólogo.
     </p>
 
-    <div class="layout">
+    <div class="layout" id="panel-analyze" role="tabpanel" aria-labelledby="tab-analyze">
       <section class="card" aria-labelledby="upload-title">
         <h2 id="upload-title">1. Imagen</h2>
 
@@ -93,6 +97,61 @@
         </div>
       </section>
     </div>
+
+    <div id="panel-metrics" role="tabpanel" aria-labelledby="tab-metrics" hidden>
+      <p class="placeholder" id="metrics-loading">Cargando métricas…</p>
+      <div id="metrics" hidden>
+        <p class="metrics-intro" id="metrics-intro"></p>
+
+        <section aria-labelledby="kpi-title">
+          <h2 id="kpi-title" class="section-title">Indicadores principales</h2>
+          <div class="kpis" id="kpis"></div>
+        </section>
+
+        <div class="metrics-layout">
+          <section class="card" aria-labelledby="cm-title">
+            <h2 id="cm-title">Matriz de confusión</h2>
+            <p class="hint">Filas: la enfermedad real. Columnas: lo que respondió la app. La diagonal son los aciertos; cada número fuera de ella es un tipo de error.</p>
+            <div class="cm-scroll">
+              <table class="cm" id="cm"></table>
+            </div>
+            <div class="cm-legend" aria-hidden="true">
+              <span>0 %</span><span class="cm-legend-bar"></span><span>100 % de la clase real</span>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="levels-title">
+            <h2 id="levels-title">Semáforo de confianza</h2>
+            <div class="table-scroll">
+              <table class="data-table" id="level-table">
+                <thead><tr><th scope="col">Nivel</th><th scope="col" class="num">Imágenes</th><th scope="col" class="num">Aciertos</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="hint">Cuánto se puede confiar en cada color. "Normal" nunca sale en verde: así el resultado más peligroso (un enfermo llamado sano) no transmite falsa seguridad.</p>
+          </section>
+        </div>
+
+        <div class="metrics-layout single">
+          <section class="card" aria-labelledby="classes-title">
+            <h2 id="classes-title">Resultados por enfermedad</h2>
+            <div class="table-scroll">
+              <table class="data-table" id="class-table">
+                <thead><tr><th scope="col">Clase</th><th scope="col" class="num">Precisión</th><th scope="col" class="num">Sensibilidad</th><th scope="col" class="num">F1</th><th scope="col" class="num">Imágenes</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="hint"><strong>Precisión:</strong> cuando la app dice esa enfermedad, cuántas veces acierta. <strong>Sensibilidad:</strong> de los casos reales, cuántos encuentra. <strong>F1:</strong> el equilibrio entre las dos.</p>
+          </section>
+        </div>
+
+        <section class="card note" aria-labelledby="limits-title">
+          <h2 id="limits-title">Cómo leer estos números</h2>
+          <ul id="limits"></ul>
+        </section>
+      </div>
+      <div class="cm-tooltip" id="cm-tooltip" role="tooltip" hidden></div>
+    </div>
   </main>
 
   <footer class="site-footer">
@@ -103,5 +162,6 @@
   </footer>
 
   <script src="app.js"></script>
+  <script src="metrics.js"></script>
 </body>
 </html>

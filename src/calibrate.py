@@ -34,6 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--normal-factor", type=float, default=NORMAL_FACTOR)
+    parser.add_argument("--splits", type=Path, default=None,
+                        help="default: the division the model was trained with")
+    parser.add_argument("--report-only", action="store_true",
+                        help="measure with the checkpoint's CURRENT calibration; fit and save nothing")
     return parser.parse_args()
 
 
@@ -143,15 +147,43 @@ def print_policy_report(labels: np.ndarray, preds: np.ndarray, levels: list[str]
         print(f"  {c}: {int(mask.sum())}/{int((preds == i).sum())} ({hits})")
 
 
+def print_by_origin(records: list[dict], labels: np.ndarray, preds: np.ndarray, levels: list[str],
+                    classes: list[str]) -> None:
+    """When val mixes datasets, repeat the screening report for each origin."""
+    origins = np.array([r.get("origin", "original") for r in records])
+    if len(set(origins)) < 2:
+        return
+    for origin in sorted(set(origins)):
+        mask = origins == origin
+        print(f"\n--- origen: {origin} ({mask.sum()} imágenes) ---")
+        print_policy_report(labels[mask], preds[mask], list(np.array(levels)[mask]), classes)
+
+
+def report_only(model, checkpoint: dict, loader, device, name: str, splits_file: Path) -> None:
+    """Screening report with the calibration already stored in the checkpoint (nothing is saved)."""
+    if "calibration" not in checkpoint:
+        raise SystemExit(f"{name} no está calibrado: ejecuta primero 'python -m src.calibrate --model {name}'")
+    labels, probs, _ = predict(model, loader, device)
+    preds, _, levels, _ = decide(torch.from_numpy(probs), checkpoint["calibration"], checkpoint["classes"])
+    print(f"Solo reporte: {name} con su calibración actual | val de {splits_file.as_posix()} "
+          f"({len(labels)} imágenes) | no se guarda nada")
+    print_policy_report(labels, preds.numpy(), levels, checkpoint["classes"])
+    print_by_origin(loader.dataset.records, labels, preds.numpy(), levels, checkpoint["classes"])
+
+
 def main() -> None:
     args = parse_args()
     device = get_device()
     path = args.models_dir / f"{args.model}_best.pth"
     model, checkpoint = load_checkpoint(path, device)
+    splits_file = args.splits or Path(checkpoint.get("splits", "splits/splits.csv"))
     loaders, _, class_weights = create_dataloaders(
         image_size=checkpoint["image_size"], batch_size=args.batch_size,
-        num_workers=args.workers, image_dir=args.image_dir,
+        num_workers=args.workers, image_dir=args.image_dir, splits_file=splits_file,
     )
+    if args.report_only:
+        report_only(model, checkpoint, loaders["val"], device, args.model, splits_file)
+        return
     if checkpoint.get("loss", "torch") != "torch":
         class_weights = torch.ones_like(class_weights)  # the fixed loss leaves no class-weight bias to undo
 
@@ -180,6 +212,8 @@ def main() -> None:
     print(f"\nPolítica de tamizaje (factor Normal {args.normal_factor}, "
           f"verde >= {HIGH_CONFIDENCE:.0%}, rojo < {LOW_CONFIDENCE:.0%}):")
     print_policy_report(labels.numpy(), final_preds.numpy(), levels, checkpoint["classes"])
+    print_by_origin(loaders["val"].dataset.records, labels.numpy(), final_preds.numpy(), levels,
+                    checkpoint["classes"])
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     plot_reliability({"sin calibrar": (raw_conf.numpy(), correct),

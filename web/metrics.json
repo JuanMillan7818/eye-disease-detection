@@ -1,0 +1,175 @@
+{
+  "model": "v2s",
+  "architecture": "EfficientNetV2-S",
+  "image_size": 384,
+  "generated": "2026-11-25",
+  "split": "test",
+  "n_images": 1446,
+  "kpis": {
+    "accuracy": 0.8672199170124482,
+    "f1_macro": 0.8818269436680918,
+    "sensitivity": 0.8948919449901768,
+    "specificity": 0.9065420560747663,
+    "missed_sick": 107,
+    "false_alarms": 40,
+    "green_share": 0.5,
+    "green_accuracy": 0.9847856154910097,
+    "ece": 0.045330063940990706,
+    "parameters": 20186455,
+    "file_mb": 81.6,
+    "cpu_ms_per_image": 249,
+    "best_epoch": 23
+  },
+  "data": {
+    "train": 7225,
+    "val": 1445,
+    "test": 1446
+  },
+  "policy": {
+    "green": 0.88,
+    "red": 0.8,
+    "normal_factor": 0.25,
+    "temperature": 1.03
+  },
+  "levels": {
+    "high": {
+      "share": 0.5,
+      "accuracy": 0.9847856154910097
+    },
+    "medium": {
+      "share": 0.07814661134163209,
+      "accuracy": 0.7964601769911505
+    },
+    "normal": {
+      "share": 0.3333333333333333,
+      "accuracy": 0.7946058091286307
+    },
+    "low": {
+      "share": 0.08852005532503458,
+      "accuracy": 0.5390625
+    }
+  },
+  "classes": [
+    {
+      "code": "A",
+      "name": "Degeneración macular",
+      "precision": 0.9864864864864865,
+      "recall": 1.0,
+      "f1": 0.9931972789115646,
+      "support": 73
+    },
+    {
+      "code": "C",
+      "name": "Catarata",
+      "precision": 0.9862068965517241,
+      "recall": 0.9930555555555556,
+      "f1": 0.9896193771626297,
+      "support": 144
+    },
+    {
+      "code": "D",
+      "name": "Retinopatía diabética",
+      "precision": 0.9313984168865436,
+      "recall": 0.7932584269662921,
+      "f1": 0.8567961165048543,
+      "support": 445
+    },
+    {
+      "code": "G",
+      "name": "Glaucoma",
+      "precision": 0.8516746411483254,
+      "recall": 0.8356807511737089,
+      "f1": 0.8436018957345972,
+      "support": 213
+    },
+    {
+      "code": "H",
+      "name": "Retinopatía hipertensiva",
+      "precision": 0.8214285714285714,
+      "recall": 0.7796610169491526,
+      "f1": 0.8,
+      "support": 59
+    },
+    {
+      "code": "M",
+      "name": "Miopía",
+      "precision": 0.8295454545454546,
+      "recall": 0.8690476190476191,
+      "f1": 0.8488372093023255,
+      "support": 84
+    },
+    {
+      "code": "N",
+      "name": "Normal",
+      "precision": 0.7838383838383839,
+      "recall": 0.9065420560747663,
+      "f1": 0.8407367280606717,
+      "support": 428
+    }
+  ],
+  "confusion": [
+    [
+      73,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      143,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    [
+      0,
+      1,
+      353,
+      5,
+      4,
+      3,
+      79
+    ],
+    [
+      0,
+      1,
+      8,
+      178,
+      1,
+      9,
+      16
+    ],
+    [
+      0,
+      0,
+      4,
+      0,
+      46,
+      0,
+      9
+    ],
+    [
+      0,
+      0,
+      0,
+      9,
+      0,
+      73,
+      2
+    ],
+    [
+      1,
+      0,
+      14,
+      17,
+      5,
+      3,
+      388
+    ]
+  ]
+}
