@@ -13,7 +13,7 @@ from api.main import MODEL_NAME, MODELS_DIR, app
 if not (MODELS_DIR / f"{MODEL_NAME}_best.pth").exists():
     pytest.skip("trained model not found", allow_module_level=True)
 
-SAMPLES = {"C": Path("data/C/cataract_088.png"), "N": Path("data/N/2551_right.jpg")}
+SAMPLES = {"C": Path("data/C/cataract_088.png"), "N": Path("data/N/2691_right.jpg")}
 
 
 @pytest.fixture(scope="module")

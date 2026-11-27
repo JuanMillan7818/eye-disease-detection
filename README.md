@@ -20,31 +20,40 @@ Muestra la enfermedad más probable, un **semáforo de confianza** calibrado, la
 
 ## Resultados
 
-Modelo final: **EfficientNetV2-S** (preentrenado en ImageNet, *fine-tuning* completo, entrada de 384 px). Medido **una sola vez** en el conjunto de test (1 446 imágenes que el modelo nunca vio, separadas por paciente):
+Modelo final: **EfficientNetV2-S** (preentrenado en ImageNet, *fine-tuning* completo, entrada de 384 px), entrenado con el dataset original y un dataset externo de otras cámaras. Medido **una sola vez** en el conjunto de test: 2 205 imágenes que el modelo nunca vio, separadas por paciente. Los números salen de lo que la app realmente responde, con la política de tamizaje:
 
 | Métrica | Valor |
 |---|---|
-| Exactitud (*accuracy*) | 86,4 % |
-| F1 macro | 0,886 |
-| Sensibilidad (enfermos detectados como enfermos) | 90,0 % |
-| Especificidad (sanos reconocidos como sanos) | 89,3 % |
+| Exactitud (*accuracy*) | 88,3 % |
+| F1 macro | 0,885 |
+| Sensibilidad (enfermos detectados como enfermos) | 93,4 % |
+| Especificidad (sanos reconocidos como sanos) | 82,0 % |
 
 | Clase | A | C | D | G | H | M | N |
 |---|---|---|---|---|---|---|---|
-| F1 | 0,99 | 1,00 | 0,85 | 0,84 | 0,82 | 0,87 | 0,83 |
+| F1 | 0,97 | 0,98 | 0,90 | 0,88 | 0,79 | 0,87 | 0,81 |
 
-**Semáforo de confianza** (probabilidades calibradas con *temperature scaling*, ECE 0,11 → 0,04):
+**Por origen de las imágenes:**
+
+| Origen | Imágenes | Exactitud | F1 macro | Verde acierta |
+|---|---|---|---|---|
+| Original (ODIR, 7 clases) | 1 446 | 86,9 % | 0,886 | 97,9 % |
+| Externo (otras cámaras, 4 clases) | 759 | 91,2 % | 0,889 | 98,3 % |
+
+El primer modelo, entrenado solo con el dataset original, se quedaba en 44 % de exactitud con las fotos externas: detectaba solo el 15 % de las retinopatías diabéticas y el 20 % de los glaucomas. Al sumar el dataset externo al entrenamiento, el modelo nuevo es igual o mejor en las dos fuentes. El modelo anterior se conserva como `v2s_original_best.pth`.
+
+**Semáforo de confianza** (probabilidades calibradas con *temperature scaling*, ECE 0,05):
 
 | Nivel | Regla | En test |
 |---|---|---|
-| 🟢 Alta | confianza ≥ 88 % | 51 % de las imágenes, **acierta el 98,2 %** |
-| 🟡 Media | 80 – 88 % | confirmar con un especialista |
+| 🟢 Alta | confianza ≥ 90 % | 52 % de las imágenes, **acierta el 98,1 %** |
+| 🟡 Media | 80 – 90 % | confirmar con un especialista |
 | 🟡 Normal | el modelo no ve enfermedad | **nunca se muestra en verde**: se recomienda control anual |
 | 🔴 Baja | confianza < 80 % | resultado incierto, consultar a un especialista |
 
-En la app, la pestaña **Métricas del modelo** muestra la matriz de confusión y los indicadores, calculados con lo que la app realmente responde (con la política de tamizaje): exactitud 86,7 %, F1 macro 0,882, sensibilidad 89,5 %, especificidad 90,7 %. Se regeneran con `uv run python -m src.model_report --model v2s`.
+En la app, la pestaña **Métricas del modelo** muestra la matriz de confusión, estos indicadores y el desglose por origen. Se regeneran con `uv run python -m src.model_report --model v2s`.
 
-**Política de tamizaje:** en una prueba de detección temprana, dejar pasar a un enfermo es peor que una falsa alarma. Por eso el modelo exige más evidencia antes de responder "Normal". Así, ningún enfermo del test recibió "Normal" con confianza alta, a cambio de algunas falsas alarmas más.
+**Política de tamizaje:** en una prueba de detección temprana, dejar pasar a un enfermo es peor que una falsa alarma. Por eso el modelo exige más evidencia antes de responder "Normal", y "Normal" nunca sale en verde. A cambio hay algunas falsas alarmas más.
 
 ### Limitaciones conocidas
 
@@ -52,7 +61,8 @@ En la app, la pestaña **Métricas del modelo** muestra la matriz de confusión 
 - **Catarata = imagen sin detalle:** el modelo aprendió que una imagen borrosa o blanca indica catarata. Una foto desenfocada de un ojo sano puede salir "Catarata". La app lo advierte.
 - **Retinopatía diabética leve** y una retina normal se parecen mucho a la resolución usada. D y N son las clases con más confusión.
 - El filtro de calidad se ajustó con las imágenes de este dataset. Con otras cámaras puede rechazar o aceptar imágenes de forma distinta.
-- El dataset mezcla varias fuentes públicas, y las métricas pueden no generalizar a otras poblaciones o equipos.
+- El dataset mezcla varias fuentes públicas. Con cámaras, hospitales o poblaciones distintas a las del entrenamiento, el rendimiento puede bajar, como pasó con el primer modelo y las fotos externas.
+- **Corte del verde:** para este modelo se subió de 88 % a 90 % después de ver la validación, porque con 88 % el verde acertaba 96,1 % en las imágenes originales (la meta era ≥ 97 %). Se eligió con validación y se midió una sola vez en test, pero no estaba fijado antes de entrenar.
 
 ## Cómo funciona
 
@@ -68,7 +78,14 @@ foto → recorte de la retina → filtro de calidad → EfficientNetV2-S → cal
 4. **Calibración:** *temperature scaling*, ajustado en validación.
 5. **Explicabilidad:** Grad-CAM sobre la última capa convolucional.
 
-**Datos:** dataset público de Kaggle ("Eye Diseases Classification"), basado en ODIR-5K y otras fuentes. Son 10 449 imágenes en 7 clases, divididas 71/14/14 % (train/val/test) **por paciente** (`StratifiedGroupKFold`), con detección de imágenes casi duplicadas para que no haya fugas entre conjuntos.
+**Datos:** dataset público de Kaggle ("Eye Diseases Classification"), basado en ODIR-5K y otras fuentes, con 10 449 imágenes en 7 clases. Se le sumó un dataset externo de 4 clases (catarata, retinopatía diabética, glaucoma y normal) tomado con otras cámaras. Quedan 13 671 imágenes, divididas en train/val/test (9 501 / 1 965 / 2 205) **por paciente** (`StratifiedGroupKFold`), con detección de imágenes casi duplicadas para que no haya fugas entre conjuntos (`splits/splits_ext.csv`).
+
+| Clase | A | C | D | G | H | M | N | Total |
+|---|---|---|---|---|---|---|---|---|
+| Original | 511 | 1 008 | 3 112 | 1 490 | 412 | 586 | 2 997 | 10 116 |
+| Externo | — | 803 | 1 092 | 920 | — | — | 740 | 3 555 |
+| **Total** | **511** | **1 811** | **4 204** | **2 410** | **412** | **586** | **3 737** | **13 671** |
+| Test | 73 | 324 | 718 | 413 | 59 | 84 | 534 | 2 205 |
 
 ## Probar la app (sin entrenar nada)
 
@@ -131,7 +148,7 @@ Cuando aparezca `Uvicorn running on http://127.0.0.1:8000`, abre **<http://127.0
 
 ```powershell
 Get-FileHash models\v2s_best.pth -Algorithm SHA256
-# 192F0D380F6099FE78217B27FE44D3FE7804F79EE0A90508D04D33A3E6C0C088
+# 7D17EA36625C59E31C09A3841052041D164AC0A4AC27691101248534A7534AD7
 ```
 
 Si el hash no coincide, el archivo está incompleto o es otro: descárgalo de nuevo.
@@ -182,7 +199,7 @@ pip install onnxruntime numpy pillow
 python examples/onnx_predict.py v2s.onnx foto.jpg
 ```
 
-[examples/onnx_predict.py](examples/onnx_predict.py) no depende del resto del proyecto. Se verificó que da la misma respuesta que la API en 145 de 145 imágenes de test. Tiene una diferencia: **no incluye el filtro de calidad**.
+[examples/onnx_predict.py](examples/onnx_predict.py) no depende del resto del proyecto. Se verificó que da la misma respuesta que PyTorch en 100 de 100 imágenes de test. Tiene una diferencia: **no incluye el filtro de calidad**.
 
 Para generar los archivos ONNX desde el checkpoint:
 
@@ -195,12 +212,14 @@ uv run --group export python -m src.export_onnx
 ```bash
 uv run python -m src.explorer          # 1. exploración de los datos
 uv run python -m src.prepare_data      # 2. preprocesamiento y división por paciente
-uv run python -m src.train --model v2s # 3. entrenamiento (mejor en GPU: notebooks/02_training_colab.ipynb)
-uv run python -m src.evaluate --split val --models v2s
-uv run python -m src.calibrate --model v2s
+uv run python -m src.prepare_external  # 3. suma el dataset externo (data/dataseet externo/)
+# 4. entrenamiento (mejor en GPU: notebooks/02_training_colab.ipynb, sección 8)
+uv run python -m src.train --model v2s --splits splits/splits_ext.csv --tag ext
+uv run python -m src.calibrate --model v2s_ext --green 0.90
+uv run python -m src.evaluate --split val --models v2s v2s_ext --splits splits/splits_ext.csv
 ```
 
-El entrenamiento se hizo en Google Colab (GPU L4, ~1,5 h). El dataset va en `data/<clase>/`.
+El entrenamiento se hizo en Google Colab (GPU L4, ~1,5 h). El dataset va en `data/<clase>/` y el externo en `data/dataseet externo/<clase>/`. El modelo de la app es `v2s_ext_best.pth` copiado como `v2s_best.pth`.
 
 ## Tests
 

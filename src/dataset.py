@@ -66,20 +66,6 @@ def compute_class_weights(records: list[dict], classes: list[str]) -> torch.Tens
     weights = [total / (len(classes) * counts[c]) for c in classes]
     return torch.tensor(weights, dtype=torch.float32)
 
-def build_transforms(image_size: int, train: bool) -> transforms.Compose:
-    """Train: random augmentation + normalization. Val/test: only resize + normalization."""
-    if train:
-        steps = [
-            transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0), ratio=(0.95, 1.05)),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1),
-        ]
-    else:
-        steps = [transforms.Resize((image_size, image_size))]
-    steps += [transforms.ToTensor(), transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)]
-    return transforms.Compose(steps)
-
 def create_dataloaders(image_size: int = 224, batch_size: int = 32, num_workers: int = 0,
                        limit: int | None = None, image_dir: Path = PROCESSED_DIR,
                        splits_file: Path = SPLITS_FILE):
@@ -106,13 +92,6 @@ def create_dataloaders(image_size: int = 224, batch_size: int = 32, num_workers:
 
     train_records = [r for r in records if r["split"] == "train"]
     return loaders, classes, compute_class_weights(train_records, classes)
-
-def compute_class_weights(records: list[dict], classes: list[str]) -> torch.Tensor:
-    """weight = total / (n_classes * count): rare classes weigh more in the loss."""
-    counts = Counter(r["label"] for r in records)
-    total = sum(counts.values())
-    weights = [total / (len(classes) * counts[c]) for c in classes]
-    return torch.tensor(weights, dtype=torch.float32)
 
 def save_batch_preview(images: torch.Tensor, path: Path) -> None:
     """Undo the normalization and save the batch as a grid image."""

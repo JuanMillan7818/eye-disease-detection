@@ -18,7 +18,7 @@ import torch
 from PIL import Image
 from torch import nn
 
-from src.calibrate import HIGH_CONFIDENCE, LEVEL_LABELS, LOW_CONFIDENCE, NORMAL_CLASS, NORMAL_FACTOR, decide
+from src.calibrate import LEVEL_LABELS, LOW_CONFIDENCE, NORMAL_CLASS, NORMAL_FACTOR, decide, green_cut
 from src.dataset import IMAGENET_MEAN, IMAGENET_STD, build_transforms, read_splits
 from src.explorer import CLASS_NAMES, DATA_DIR
 from src.model import load_checkpoint
@@ -112,7 +112,7 @@ def write_metadata(onnx_path: Path, checkpoint: dict) -> Path:
             "normal_class": NORMAL_CLASS,
             "normal_factor": calibration.get("normal_factor", NORMAL_FACTOR),
             "levels": "low if confidence < low; normal if decided class is N; high if >= high; else medium",
-            "high": HIGH_CONFIDENCE, "low": LOW_CONFIDENCE,
+            "high": green_cut(calibration), "low": LOW_CONFIDENCE,
             "level_labels": LEVEL_LABELS,
         },
         "temperature": calibration["temperature"],

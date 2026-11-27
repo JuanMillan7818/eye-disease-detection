@@ -14,7 +14,7 @@ from src.model import load_checkpoint
 from src.prepare_data import PROCESSED_DIR
 from src.train import get_device
 
-HIGH_CONFIDENCE = 0.88  # green: chosen on val (green hits >= 97 %)
+HIGH_CONFIDENCE = 0.88  # green: chosen on val (green hits >= 97 %); a model may store its own
 LOW_CONFIDENCE = 0.80   # red below this: chosen on val (hits ~50 %)
 NORMAL_FACTOR = 0.25    # demand 4x more evidence before saying "Normal" (fewer missed patients)
 NORMAL_CLASS = "N"
@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--normal-factor", type=float, default=NORMAL_FACTOR)
+    parser.add_argument("--green", type=float, default=HIGH_CONFIDENCE,
+                        help="green cut for this model (choose it on val so green hits >= 97 %%)")
     parser.add_argument("--splits", type=Path, default=None,
                         help="default: the division the model was trained with")
     parser.add_argument("--report-only", action="store_true",
@@ -53,13 +55,18 @@ def calibrated_confidence(probs: torch.Tensor, class_weights: torch.Tensor,
     return preds, confidence, corrected
 
 
-def confidence_level(confidence: float, is_normal: bool = False) -> str:
+def confidence_level(confidence: float, is_normal: bool = False, green: float = HIGH_CONFIDENCE) -> str:
     """Traffic light. A 'Normal' answer is never green: missing a disease is the costly error."""
     if confidence < LOW_CONFIDENCE:
         return "low"
     if is_normal:
         return "normal"
-    return "high" if confidence >= HIGH_CONFIDENCE else "medium"
+    return "high" if confidence >= green else "medium"
+
+
+def green_cut(calibration: dict) -> float:
+    """Green threshold of this model (older checkpoints use the global default)."""
+    return calibration.get("high_confidence", HIGH_CONFIDENCE)
 
 
 def decide(probs: torch.Tensor, calibration: dict,
@@ -73,7 +80,8 @@ def decide(probs: torch.Tensor, calibration: dict,
     _, _, distribution = calibrated_confidence(  # ...the shown % comes from the real probabilities
         probs, torch.tensor(calibration["class_weights"]), calibration["temperature"])
     confidence = distribution.gather(1, preds[:, None]).squeeze(1)
-    levels = [confidence_level(float(c), int(p) == normal) for c, p in zip(confidence, preds)]
+    green = green_cut(calibration)
+    levels = [confidence_level(float(c), int(p) == normal, green) for c, p in zip(confidence, preds)]
     return preds, confidence, levels, distribution
 
 
@@ -165,8 +173,8 @@ def report_only(model, checkpoint: dict, loader, device, name: str, splits_file:
         raise SystemExit(f"{name} no está calibrado: ejecuta primero 'python -m src.calibrate --model {name}'")
     labels, probs, _ = predict(model, loader, device)
     preds, _, levels, _ = decide(torch.from_numpy(probs), checkpoint["calibration"], checkpoint["classes"])
-    print(f"Solo reporte: {name} con su calibración actual | val de {splits_file.as_posix()} "
-          f"({len(labels)} imágenes) | no se guarda nada")
+    print(f"Solo reporte: {name} con su calibración actual (verde >= {green_cut(checkpoint['calibration']):.0%}) "
+          f"| val de {splits_file.as_posix()} ({len(labels)} imágenes) | no se guarda nada")
     print_policy_report(labels, preds.numpy(), levels, checkpoint["classes"])
     print_by_origin(loader.dataset.records, labels, preds.numpy(), levels, checkpoint["classes"])
 
@@ -206,11 +214,12 @@ def main() -> None:
         "temperature": temperature,
         "class_weights": class_weights.tolist(),
         "normal_factor": args.normal_factor,
+        "high_confidence": args.green,
         "fitted_on": "val",
     }
     final_preds, _, levels, _ = decide(probs, calibration, checkpoint["classes"])
     print(f"\nPolítica de tamizaje (factor Normal {args.normal_factor}, "
-          f"verde >= {HIGH_CONFIDENCE:.0%}, rojo < {LOW_CONFIDENCE:.0%}):")
+          f"verde >= {args.green:.0%}, rojo < {LOW_CONFIDENCE:.0%}):")
     print_policy_report(labels.numpy(), final_preds.numpy(), levels, checkpoint["classes"])
     print_by_origin(loaders["val"].dataset.records, labels.numpy(), final_preds.numpy(), levels,
                     checkpoint["classes"])

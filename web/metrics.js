@@ -82,12 +82,13 @@
     renderConfusion(m);
     renderClassTable(m);
     renderLevelTable(m);
+    renderOriginTable(m);
 
     const d = m.data;
     const items = [
       `Datos: ${int(d.train)} imágenes para entrenar, ${int(d.val)} para ajustar y decidir, ${int(d.test)} para esta medición final (divididas por paciente).`,
       "El error más frecuente es retinopatía diabética leve respondida como Normal: por eso la app exige más evidencia antes de decir \"Normal\", y \"Normal\" nunca sale en verde.",
-      "Estos números valen para fotos parecidas a las del dataset. Con otras cámaras u hospitales el rendimiento baja: en una validación externa, la retinopatía diabética y el glaucoma se detectaron mucho peor.",
+      "El modelo aprendió con fotos de dos fuentes (ODIR y un dataset externo). Con cámaras u hospitales distintos a esos el rendimiento puede bajar: el primer modelo, entrenado solo con ODIR, detectaba mal la retinopatía diabética y el glaucoma de las fotos externas.",
       `Modelo: ${m.model}, mejor época ${k.best_epoch} · temperatura de calibración ${dec(m.policy.temperature, 2)} · cortes del semáforo: verde ≥ ${pct(m.policy.green, 0)}, rojo < ${pct(m.policy.red, 0)} · actualizado ${m.generated}.`,
     ];
     $("limits").replaceChildren(...items.map((text) => el("li", "", text)));
@@ -172,6 +173,22 @@
       return tr;
     });
     $("class-table").tBodies[0].replaceChildren(...rows);
+  }
+
+  function renderOriginTable(m) {
+    const names = { original: "Original (ODIR, 7 clases)", externo: "Externo (otras cámaras, 4 clases)" };
+    const origins = Object.entries(m.origins || {});
+    if (origins.length < 2) return;  // a single source adds nothing to the global numbers
+    const rows = origins.map(([key, o]) => {
+      const tr = el("tr");
+      const th = el("th", "", names[key] || key);
+      th.scope = "row";
+      tr.append(th, el("td", "num", int(o.n_images)), el("td", "num", pct(o.accuracy)),
+                el("td", "num", dec(o.f1_macro, 2)), el("td", "num", pct(o.green_accuracy)));
+      return tr;
+    });
+    $("origin-table").tBodies[0].replaceChildren(...rows);
+    $("origins-card").hidden = false;
   }
 
   function renderLevelTable(m) {

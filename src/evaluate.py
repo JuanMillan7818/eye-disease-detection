@@ -58,7 +58,8 @@ def plot_confusion_matrix(labels: np.ndarray, preds: np.ndarray, classes: list[s
                           title: str, path: Path) -> None:
     """Rows = real class, columns = prediction. Colour = % of the real class (recall)."""
     matrix = confusion_matrix(labels, preds, labels=range(len(classes)))
-    row_share = matrix / matrix.sum(axis=1, keepdims=True)
+    totals = matrix.sum(axis=1, keepdims=True)
+    row_share = np.divide(matrix, totals, out=np.zeros(matrix.shape), where=totals > 0)  # a class may be absent
 
     fig, ax = plt.subplots(figsize=(8, 7))
     ax.imshow(row_share, cmap="Blues", vmin=0, vmax=1)
@@ -179,9 +180,9 @@ def main() -> None:
         rows.extend(evaluate_model(name, args, device))
 
     print(f"\nComparación en {args.split} ({args.splits.as_posix()}):")
-    print(f"{'modelo':<9}{'variante':<18}{'acc':>8}{'F1 macro':>10}")
+    print(f"{'modelo':<14}{'variante':<18}{'acc':>8}{'F1 macro':>10}")
     for row in rows:
-        print(f"{row['modelo']:<9}{row['variante']:<18}{row['acc']:>8.3f}{row['f1_macro']:>10.3f}")
+        print(f"{row['modelo']:<14}{row['variante']:<18}{row['acc']:>8.3f}{row['f1_macro']:>10.3f}")
 
     fieldnames = list(dict.fromkeys(key for row in rows for key in row))
     with open(REPORTS_DIR / f"{args.split}{split_suffix(args.splits)}_comparison.csv", "w", newline="", encoding="utf-8") as f:

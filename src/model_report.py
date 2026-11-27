@@ -19,9 +19,10 @@ import numpy as np
 import torch
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
-from src.calibrate import (HIGH_CONFIDENCE, LOW_CONFIDENCE, NORMAL_CLASS, decide,
+from src.calibrate import (LOW_CONFIDENCE, NORMAL_CLASS, decide, green_cut,
                            expected_calibration_error)
 from src.dataset import read_splits
+from src.evaluate import split_suffix
 from src.explorer import CLASS_NAMES
 from src.model import MODEL_SPECS, count_parameters, load_checkpoint
 
@@ -38,12 +39,32 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_predictions(path: Path, classes: list[str]) -> tuple[np.ndarray, torch.Tensor]:
+def read_predictions(path: Path, classes: list[str]) -> tuple[list[str], np.ndarray, torch.Tensor]:
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     labels = np.array([classes.index(r["label"]) for r in rows])
     probs = torch.tensor([[float(r[f"p_{c}"]) for c in classes] for r in rows])
-    return labels, probs
+    return [r["file"] for r in rows], labels, probs
+
+
+def by_origin(origins: np.ndarray, labels: np.ndarray, preds: np.ndarray, green: np.ndarray,
+              classes: list[str]) -> dict:
+    """Same KPIs per image source: a mixed test set can hide a weak one."""
+    report = {}
+    for origin in sorted(set(origins)):
+        m = origins == origin
+        present = sorted(set(labels[m]))  # the external data has only 4 of the 7 classes
+        _, recall, f1, _ = precision_recall_fscore_support(
+            labels[m], preds[m], labels=present, zero_division=0)
+        report[origin] = {
+            "n_images": int(m.sum()),
+            "accuracy": float((labels[m] == preds[m]).mean()),
+            "f1_macro": float(f1.mean()),
+            "green_share": float(green[m].mean()),
+            "green_accuracy": float((labels[m & green] == preds[m & green]).mean()),
+            "recall": {classes[c]: float(r) for c, r in zip(present, recall)},
+        }
+    return report
 
 
 @torch.no_grad()
@@ -61,7 +82,9 @@ def build_report(name: str, models_dir: Path) -> dict:
     path = models_dir / f"{name}_best.pth"
     model, checkpoint = load_checkpoint(path, "cpu")
     classes, calibration = checkpoint["classes"], checkpoint["calibration"]
-    labels, probs = read_predictions(REPORTS_DIR / f"{name}_test_predictions.csv", classes)
+    splits_file = Path(checkpoint.get("splits", "splits/splits.csv"))
+    files, labels, probs = read_predictions(
+        REPORTS_DIR / f"{name}_test{split_suffix(splits_file)}_predictions.csv", classes)
 
     preds, confidence, levels, _ = decide(probs, calibration, classes)
     preds, confidence, levels = preds.numpy(), confidence.numpy(), np.array(levels)
@@ -72,7 +95,10 @@ def build_report(name: str, models_dir: Path) -> dict:
 
     precision, recall, f1, support = precision_recall_fscore_support(
         labels, preds, labels=range(len(classes)), zero_division=0)
-    splits = Counter(r["split"] for r in read_splits(Path(checkpoint.get("splits", "splits/splits.csv"))))
+    records = read_splits(splits_file)
+    splits = Counter(r["split"] for r in records)
+    origin_of = {r["file"]: r.get("origin", "original") for r in records}
+    origins = np.array([origin_of[f] for f in files])
     total, _ = count_parameters(model)
 
     return {
@@ -98,7 +124,7 @@ def build_report(name: str, models_dir: Path) -> dict:
             "best_epoch": checkpoint["metrics"].get("epoch"),
         },
         "data": {split: splits[split] for split in ("train", "val", "test")},
-        "policy": {"green": HIGH_CONFIDENCE, "red": LOW_CONFIDENCE,
+        "policy": {"green": green_cut(calibration), "red": LOW_CONFIDENCE,
                    "normal_factor": calibration.get("normal_factor"),
                    "temperature": calibration["temperature"]},
         "levels": {lv: {"share": float((levels == lv).mean()),
@@ -108,6 +134,7 @@ def build_report(name: str, models_dir: Path) -> dict:
                      "f1": float(f), "support": int(s)}
                     for c, p, r, f, s in zip(classes, precision, recall, f1, support)],
         "confusion": confusion_matrix(labels, preds, labels=range(len(classes))).tolist(),
+        "origins": by_origin(origins, labels, preds, green, classes),
     }
 
 
@@ -119,6 +146,9 @@ def main() -> None:
     print(f"{args.model} | test {report['n_images']} imágenes | acc {k['accuracy']:.1%} | "
           f"F1 macro {k['f1_macro']:.3f} | sensibilidad {k['sensitivity']:.1%} | "
           f"especificidad {k['specificity']:.1%} | verde {k['green_share']:.0%} acierta {k['green_accuracy']:.1%}")
+    for origin, o in report["origins"].items():
+        print(f"  origen {origin:<9} n={o['n_images']:4} | acc {o['accuracy']:.1%} | F1 macro {o['f1_macro']:.3f} | "
+              f"verde {o['green_share']:.0%} acierta {o['green_accuracy']:.1%}")
     print(f"Guardado en {args.output}")
 
 

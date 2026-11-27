@@ -143,6 +143,17 @@
             </div>
             <p class="hint"><strong>Precisión:</strong> cuando la app dice esa enfermedad, cuántas veces acierta. <strong>Sensibilidad:</strong> de los casos reales, cuántos encuentra. <strong>F1:</strong> el equilibrio entre las dos.</p>
           </section>
+
+          <section class="card" aria-labelledby="origins-title" id="origins-card" hidden>
+            <h2 id="origins-title">Resultados por origen de las imágenes</h2>
+            <div class="table-scroll">
+              <table class="data-table" id="origin-table">
+                <thead><tr><th scope="col">Origen</th><th scope="col" class="num">Imágenes</th><th scope="col" class="num">Exactitud</th><th scope="col" class="num">F1</th><th scope="col" class="num">Verde acierta</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="hint">El test mezcla fotos del dataset original (ODIR, 7 clases) con un dataset externo de otras cámaras (4 clases). Medir cada uno por separado muestra que el modelo funciona en ambos y no solo en el promedio.</p>
+          </section>
         </div>
 
         <section class="card note" aria-labelledby="limits-title">

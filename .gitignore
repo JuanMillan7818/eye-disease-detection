@@ -25,3 +25,6 @@ reports/figures/gradcam/*
 !reports/figures/gradcam/*_grid_*.png
 !reports/figures/gradcam/*_errors_*.png
 !reports/figures/gradcam/*_mean_maps.png
+
+# Zip de imagenes preprocesadas (pesado, se comparte aparte)
+data_processed.zip

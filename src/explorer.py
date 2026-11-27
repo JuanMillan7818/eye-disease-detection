@@ -30,7 +30,8 @@ def list_images(data_dir: Path) -> dict[str, list[Path]]:
     classes = {}
     for folder in sorted(p for p in data_dir.iterdir() if p.is_dir()):
         images = sorted(f for f in folder.iterdir() if f.suffix.lower() in EXTENSIONS)
-        classes[folder.name] = images
+        if images:  # skip folders that hold other datasets (e.g. "dataseet externo/<class>/")
+            classes[folder.name] = images
     return classes
 
 def print_class_counts(classes: dict[str, list[Path]]) -> None:
